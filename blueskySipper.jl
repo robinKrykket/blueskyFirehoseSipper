@@ -7,6 +7,11 @@ using Dates
 const DB_PATH = "bluesky_archive.sqlite"
 const SERVER_URL = "wss://jetstream2.us-east.bsky.network/subscribe?wantedCollections=app.bsky.feed.post&wantedCollections=app.bsky.feed.like"
 
+# Function to get keyword filters (modifiable dynamically)
+function get_keywords()
+    return ["protest", "rally", "riot", "protesters"]
+end
+
 # Initialize SQLite database
 function init_db()
     println("🔄 Initializing database at: $DB_PATH")
@@ -17,16 +22,16 @@ function init_db()
             received_at TEXT NOT NULL,
             time_us INTEGER,
             event_type TEXT,
+            text TEXT,
+            created_at TEXT,
             collection TEXT,
             operation TEXT,
             rev TEXT,
             did TEXT,
             rkey TEXT,
             cid TEXT,
-            created_at TEXT,
             subject_cid TEXT,
             subject_uri TEXT,
-            text TEXT,
             embed_type TEXT,
             image_ref TEXT,
             image_mime TEXT,
@@ -38,6 +43,11 @@ function init_db()
     """)
     println("✅ Database initialized successfully")
     return db
+end
+
+# Function to check if text contains any keyword
+function contains_keyword(text::String, keywords::Vector{String})
+    return any(kw -> occursin(kw, lowercase(text)), lowercase.(keywords))
 end
 
 # Save raw message data to SQLite
@@ -52,7 +62,7 @@ function save_message(db, event_type, raw_json)
         return false
     end
 
-    # Extract fields safely (allowing NULLs)
+    # Extract fields safely
     did = get(event, "did", nothing)
     time_us = get(event, "time_us", nothing)
 
@@ -68,31 +78,12 @@ function save_message(db, event_type, raw_json)
     created_at = get(record, "createdAt", nothing)
     text = get(record, "text", nothing)
 
-    # Extract embedded images safely
-    embed = get(record, "embed", Dict())
-    embed_type = get(embed, "\$type", nothing)
-    image_ref, image_mime, image_size = nothing, nothing, nothing
-    aspect_ratio_width, aspect_ratio_height = nothing, nothing
-
-    if embed_type == "app.bsky.embed.images"
-        images = get(embed, "images", [])
-        if !isempty(images)
-            first_image = images[1]
-            image = get(first_image, "image", Dict())
-            aspect_ratio = get(first_image, "aspectRatio", Dict())
-
-            image_ref = get(get(image, "ref", Dict()), "\$link", nothing)
-            image_mime = get(image, "mimeType", nothing)
-            image_size = get(image, "size", nothing)
-            aspect_ratio_width = get(aspect_ratio, "width", nothing)
-            aspect_ratio_height = get(aspect_ratio, "height", nothing)
-        end
+    # Validate text field against keyword list
+    keywords = get_keywords()
+    if text === nothing || (!isempty(keywords) && !contains_keyword(text, keywords))
+        println("⚠️ Skipping message: No valid text or does not contain required keywords.")
+        return false
     end
-
-    # Extract subject details safely (for likes)
-    subject = get(record, "subject", Dict())
-    subject_cid = get(subject, "cid", nothing)
-    subject_uri = get(subject, "uri", nothing)
 
     # Insert into database
     try
@@ -103,8 +94,8 @@ function save_message(db, event_type, raw_json)
                 image_ref, image_mime, image_size, aspect_ratio_width, aspect_ratio_height, raw_json
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (received_at, time_us, event_type, collection, operation, rev, did, rkey, cid, created_at, 
-              subject_cid, subject_uri, text, embed_type, image_ref, image_mime, image_size, 
-              aspect_ratio_width, aspect_ratio_height, raw_json))
+              nothing, nothing, text, nothing, nothing, nothing, nothing, 
+              nothing, nothing, raw_json))
 
         println("💾 **Saved event:** $event_type, Collection: $collection, Text: $(text !== nothing ? (length(text) > 50 ? text[1:50] * "..." : text) : "N/A")")
         return true
@@ -126,31 +117,31 @@ function stream_firehose()
             last_message_time = time()  # Track time since last message
             
             try
-                while true  # Use infinite loop instead of isopen check
+                while true
                     try
                         if HTTP.WebSockets.isclosed(ws)
                             println("\n🔄 WebSocket connection closed. Exiting loop...")
                             break
                         end
                         
-                        data = HTTP.WebSockets.receive(ws)  # Use receive instead of readavailable
+                        data = HTTP.WebSockets.receive(ws)
                         if isempty(data)
-                            sleep(0.1)  # Small sleep to prevent CPU spinning
+                            sleep(0.1)
                             continue
                         end
                         
                         msg = String(data)
-                        println("\n📩 **Received message! Raw Data:**\n", msg)  # Print everything
+                        println("\n📩 **Received message! Raw Data:**\n", msg)
 
                         # Parse JSON safely
                         event = try
                             JSON.parse(msg)
                         catch e
                             println("\n❌ JSON Parsing Error:", e)
-                            continue  # Skip to next message
+                            continue
                         end
 
-                        event_type = get(event, "kind", "unknown")  # Detect event type
+                        event_type = get(event, "kind", "unknown")
 
                         # Save raw JSON with event type
                         if save_message(db, event_type, msg)
@@ -159,12 +150,12 @@ function stream_firehose()
                             println("❌ Failed to save event to database.")
                         end
 
-                        last_message_time = time()  # Update last message time
+                        last_message_time = time()
 
                     catch e
                         if isa(e, InterruptException)
                             println("\n🔴 Shutdown detected. Closing connection...")
-                            break  # Exit loop on Ctrl+C
+                            break
                         else
                             println("\n❌ Unexpected error:", e)
                             if isa(e, HTTP.WebSockets.WebSocketError)
@@ -177,7 +168,7 @@ function stream_firehose()
                     # Heartbeat check every 30 seconds
                     if time() - last_message_time > 30
                         println("💤 No messages received in the last 30 seconds. Still listening...")
-                        last_message_time = time()  # Reset timer
+                        last_message_time = time()
                     end
                 end
             catch e
