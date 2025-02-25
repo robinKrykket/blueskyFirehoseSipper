@@ -1,7 +1,7 @@
 # Bluesky Firehose Sipper
 
 ## Overview
-This script listens to the Bluesky Firehose, searching for posts containing specific keywords. When a matching post is found, it is saved in an SQLite database for future analysis. Perfect for tracking trending topics, protests, and online discussions in real-time!
+This script listens to the Bluesky Firehose, searching for posts containing specific keywords. When a matching post is found, it is saved in an SQLite database for future analysis. Perfect for tracking trending topics, protests, and online discussions in real-time! Sipping out of a firehose has never been easier. 
 
 ![image](https://github.com/user-attachments/assets/caa51b69-ac0d-49d9-b91d-672025a402b1)
 
