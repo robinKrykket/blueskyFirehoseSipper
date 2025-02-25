@@ -7,7 +7,7 @@ using Dates
 const DB_PATH = "bluesky_archive.sqlite"
 const SERVER_URL = "wss://jetstream2.us-east.bsky.network/subscribe?wantedCollections=app.bsky.feed.post&wantedCollections=app.bsky.feed.like"
 
-# Function to get keyword filters (modifiable dynamically)
+# Function to get keyword filters
 function get_keywords()
     return ["protest", "rally", "riot", "protesters"]
 end
@@ -62,7 +62,7 @@ function save_message(db, event_type, raw_json)
         return false
     end
 
-    # Extract fields safely
+    # Extract fields
     did = get(event, "did", nothing)
     time_us = get(event, "time_us", nothing)
 
@@ -73,7 +73,7 @@ function save_message(db, event_type, raw_json)
     rkey = get(commit, "rkey", nothing)
     cid = get(commit, "cid", nothing)
 
-    # Extract record details safely
+    # Extract record details
     record = get(commit, "record", Dict())
     created_at = get(record, "createdAt", nothing)
     text = get(record, "text", nothing)
